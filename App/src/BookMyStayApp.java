@@ -1,33 +1,68 @@
-/**
- * Book My Stay App
- *
- * This class represents the entry point of the Hotel Booking Management System.
- * It demonstrates how a Java application starts execution and prints
- * a welcome message to the console.
- *
- * @author YourName
- * @version 1.0
- */
+import java.util.HashMap;
+
 public class BookMyStayApp {
 
-    /**
-     * Main method – entry point of the application.
-     * The JVM starts program execution from this method.
-     *
-     * @param args command-line arguments
-     */
+    // HashMap to store room type and available count
+    HashMap<String, Integer> inventory;
+
+    // Constructor to initialize inventory
+    RoomInventory() {
+        inventory = new HashMap<>();
+
+        inventory.put("Single Room", 5);
+        inventory.put("Double Room", 3);
+        inventory.put("Suite Room", 2);
+    }
+
+    // Method to get availability
+    void getAvailability(String roomType) {
+        if (inventory.containsKey(roomType)) {
+            System.out.println(roomType + " Available: " + inventory.get(roomType));
+        } else {
+            System.out.println("Room type not found.");
+        }
+    }
+
+    // Method to update availability
+    void updateAvailability(String roomType, int newCount) {
+        if (inventory.containsKey(roomType)) {
+            inventory.put(roomType, newCount);
+            System.out.println(roomType + " updated to " + newCount);
+        } else {
+            System.out.println("Room type not found.");
+        }
+    }
+
+    // Method to display full inventory
+    void displayInventory() {
+        System.out.println("Current Room Inventory:\n");
+
+        for (String roomType : inventory.keySet()) {
+            System.out.println(roomType + " : " + inventory.get(roomType));
+        }
+    }
+
+    // Main method
     public static void main(String[] args) {
 
-        // Application name and version
-        String appName = "Book My Stay - Hotel Booking System";
-        String version = "v1.0";
+        RoomInventory inv = new RoomInventory();
 
-        // Print welcome message
-        System.out.println("======================================");
-        System.out.println(" Welcome to " + appName);
-        System.out.println(" Version: " + version);
-        System.out.println("======================================");
-        System.out.println("Application started successfully.");
-        System.out.println("Thank you for using Book My Stay!");
+        // Display initial inventory
+        inv.displayInventory();
+
+        System.out.println();
+
+        // Check availability
+        inv.getAvailability("Single Room");
+
+        System.out.println();
+
+        // Update availability
+        inv.updateAvailability("Single Room", 4);
+
+        System.out.println();
+
+        // Display updated inventory
+        inv.displayInventory();
     }
 }
