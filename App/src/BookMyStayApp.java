@@ -1,24 +1,16 @@
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 /**
- * USE CASE 4: Room Search & Availability Check
- * Focus: Read-Only access, Separation of Concerns, and Defensive Programming.
+ * BOOK MY STAY SYSTEM
+ * Use Case 4: Room Search & Availability Check
+ * Use Case 5: Booking Request (FIFO Queue)
  */
 
-// --- DOMAIN LAYER ---
-
+// 1. SHARED DOMAIN MODELS
 enum RoomType {
     SINGLE, DOUBLE, SUITE, DELUXE
 }
 
-/**
- * Room Object (Domain Model)
- * Represents the static details of a room.
- * Use of 'final' and lack of setters ensures Read-Only Access.
- */
 class Room {
     private final RoomType type;
     private final double pricePerNight;
@@ -40,12 +32,28 @@ class Room {
     }
 }
 
-// --- DATA ACCESS / STATE LAYER ---
-
 /**
- * Inventory Manager (State Holder)
- * Centralizes the count of available rooms.
+ * Use Case 5: Reservation intent object
  */
+class Reservation {
+    private final String requestId;
+    private final String guestName;
+    private final RoomType requestedType;
+
+    public Reservation(String guestName, RoomType requestedType) {
+        this.requestId = UUID.randomUUID().toString().substring(0, 8);
+        this.guestName = guestName;
+        this.requestedType = requestedType;
+    }
+
+    @Override
+    public String toString() {
+        return "ID: " + requestId + " | Guest: " + guestName + " | Room: " + requestedType;
+    }
+}
+
+// 2. SERVICES
+
 class InventoryManager {
     private final Map<RoomType, Integer> roomCounts = new HashMap<>();
 
@@ -53,22 +61,11 @@ class InventoryManager {
         roomCounts.put(type, count);
     }
 
-    /**
-     * Defensive Programming:
-     * Returns the current count without allowing the caller to modify the internal Map.
-     */
     public int getAvailableCount(RoomType type) {
         return roomCounts.getOrDefault(type, 0);
     }
 }
 
-// --- SERVICE LAYER ---
-
-/**
- * Search Service
- * Handles the logic for filtering and displaying rooms based on availability.
- * This service is decoupled from the "Booking/Write" logic.
- */
 class RoomSearchService {
     private final InventoryManager inventory;
     private final List<Room> roomCatalog;
@@ -78,65 +75,58 @@ class RoomSearchService {
         this.roomCatalog = roomCatalog;
     }
 
-    /**
-     * Core Logic: Filters out rooms with 0 availability.
-     * Ensures System State remains unchanged (No updates performed here).
-     */
     public List<Room> searchAvailableRooms() {
-        List<Room> availableResults = new ArrayList<>();
-
+        List<Room> results = new ArrayList<>();
         for (Room room : roomCatalog) {
-            // Retrieve availability from centralized inventory
-            int availableCount = inventory.getAvailableCount(room.getType());
-
-            // Validation Logic: Only include actionable options (count > 0)
-            if (availableCount > 0) {
-                availableResults.add(room);
+            if (inventory.getAvailableCount(room.getType()) > 0) {
+                results.add(room);
             }
         }
-        return availableResults;
+        return results;
     }
 }
 
-// --- APPLICATION ENTRY POINT ---
+class BookingRequestQueue {
+    private final Queue<Reservation> requestQueue = new LinkedList<>();
 
+    public void submitRequest(Reservation res) {
+        requestQueue.add(res);
+        System.out.println("[Queue] Request added for: " + res);
+    }
+
+    public void processAll() {
+        System.out.println("\n--- Processing FIFO Queue ---");
+        while (!requestQueue.isEmpty()) {
+            System.out.println("Processing: " + requestQueue.poll());
+        }
+    }
+}
+
+// 3. MAIN EXECUTION
 public class BookMyStayApp {
     public static void main(String[] args) {
-        // 1. Initialize Centralized Inventory
+        // Setup
         InventoryManager inventory = new InventoryManager();
-        inventory.setInventory(RoomType.SINGLE, 5);
-        inventory.setInventory(RoomType.DOUBLE, 0); // Out of stock - should be filtered
-        inventory.setInventory(RoomType.SUITE, 2);
-        inventory.setInventory(RoomType.DELUXE, 1);
+        inventory.setInventory(RoomType.SINGLE, 2);
+        inventory.setInventory(RoomType.SUITE, 1);
 
-        // 2. Define Room Catalog (Domain Objects)
         List<Room> catalog = List.of(
-                new Room(RoomType.SINGLE, 100.0, "Cozy single bed"),
-                new Room(RoomType.DOUBLE, 180.0, "Spacious double bed"),
-                new Room(RoomType.SUITE, 350.0, "Luxury suite with balcony"),
-                new Room(RoomType.DELUXE, 500.0, "Penthouse deluxe experience")
+                new Room(RoomType.SINGLE, 100.0, "Cozy Single"),
+                new Room(RoomType.SUITE, 300.0, "Luxury Suite")
         );
 
-        // 3. Initialize Search Service (Separation of Concerns)
+        // UC4: Search
         RoomSearchService searchService = new RoomSearchService(inventory, catalog);
+        System.out.println("Available Rooms:");
+        searchService.searchAvailableRooms().forEach(System.out::println);
+        System.out.println();
 
-        // 4. Guest Action: Initiate Search
-        System.out.println("=== BOOK MY STAY: AVAILABLE ROOMS ===");
-        System.out.println(String.format("%-10s | %-25s | %-12s | %-10s", "TYPE", "DESCRIPTION", "PRICE", "AVAILABLE"));
-        System.out.println("--------------------------------------------------------------------------");
+        // UC5: Booking Intake (Fairness)
+        BookingRequestQueue queue = new BookingRequestQueue();
+        queue.submitRequest(new Reservation("Alice", RoomType.SUITE));
+        queue.submitRequest(new Reservation("Bob", RoomType.SINGLE));
 
-        List<Room> availableRooms = searchService.searchAvailableRooms();
-
-        if (availableRooms.isEmpty()) {
-            System.out.println("No rooms are currently available.");
-        } else {
-            for (Room room : availableRooms) {
-                int count = inventory.getAvailableCount(room.getType());
-                System.out.println(room + " | Qty: " + count);
-            }
-        }
-
-        System.out.println("--------------------------------------------------------------------------");
-        System.out.println("Search Complete. System state remains unchanged.");
+        // Final process
+        queue.processAll();
     }
 }
