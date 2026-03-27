@@ -1,11 +1,9 @@
 import java.util.*;
 
 /**
- * BOOK MY STAY - INTEGRATED SYSTEM
- * --------------------------------
- * UC4: Search & Availability Check
- * UC5: Booking Request (FIFO Queue)
- * UC6: Reservation Confirmation & Allocation (Set-based uniqueness)
+ * BOOK MY STAY - FULLY INTEGRATED SYSTEM
+ * --------------------------------------
+ * UC4: Search | UC5: Queue | UC6: Allocation | UC7: Add-On Services
  */
 
 // --- 1. DOMAIN MODELS ---
@@ -14,24 +12,25 @@ enum RoomType {
     SINGLE, DOUBLE, SUITE, DELUXE
 }
 
-class Room {
-    private final RoomType type;
-    private final double pricePerNight;
-    private final String description;
+/**
+ * UC7: Add-On Service Model
+ * Represents optional offerings (Breakfast, WiFi, Spa, etc.)
+ */
+class AddOnService {
+    private final String name;
+    private final double price;
 
-    public Room(RoomType type, double pricePerNight, String description) {
-        this.type = type;
-        this.pricePerNight = pricePerNight;
-        this.description = description;
+    public AddOnService(String name, double price) {
+        this.name = name;
+        this.price = price;
     }
 
-    public RoomType getType() { return type; }
-    public double getPricePerNight() { return pricePerNight; }
-    public String getDescription() { return description; }
+    public String getName() { return name; }
+    public double getPrice() { return price; }
 
     @Override
     public String toString() {
-        return String.format("%-10s | %-25s | $%.2f/night", type, description, pricePerNight);
+        return name + " ($" + price + ")";
     }
 }
 
@@ -46,112 +45,118 @@ class Reservation {
         this.requestedType = requestedType;
     }
 
+    public String getRequestId() { return requestId; }
     public String getGuestName() { return guestName; }
     public RoomType getRequestedType() { return requestedType; }
 
     @Override
     public String toString() {
-        return "Request [#" + requestId + "] for " + guestName + " (" + requestedType + ")";
+        return "ID: " + requestId + " | Guest: " + guestName;
     }
 }
 
-// --- 2. STATE & DATA MANAGEMENT ---
+// --- 2. STATE & SERVICE MANAGEMENT ---
 
 class InventoryManager {
     private final Map<RoomType, Integer> roomCounts = new HashMap<>();
+    public void updateInventory(RoomType type, int count) { roomCounts.put(type, count); }
+    public int getAvailableCount(RoomType type) { return roomCounts.getOrDefault(type, 0); }
+}
 
-    public void updateInventory(RoomType type, int count) {
-        roomCounts.put(type, count);
+/**
+ * UC7: Add-On Service Manager
+ * Uses Map<String, List<AddOnService>> to link Reservation IDs to multiple services.
+ */
+class AddOnManager {
+    private final Map<String, List<AddOnService>> reservationAddOns = new HashMap<>();
+
+    public void addServiceToReservation(String reservationId, AddOnService service) {
+        // computeIfAbsent creates a new list if the ID doesn't exist yet
+        reservationAddOns.computeIfAbsent(reservationId, k -> new ArrayList<>()).add(service);
+        System.out.println("Service Added: " + service.getName() + " to Reservation " + reservationId);
     }
 
-    public int getAvailableCount(RoomType type) {
-        return roomCounts.getOrDefault(type, 0);
+    public double calculateTotalAddOnCost(String reservationId) {
+        List<AddOnService> services = reservationAddOns.getOrDefault(reservationId, Collections.emptyList());
+        return services.stream().mapToDouble(AddOnService::getPrice).sum();
+    }
+
+    public void displayAddOns(String reservationId) {
+        List<AddOnService> services = reservationAddOns.get(reservationId);
+        if (services != null) {
+            System.out.println("Selected Add-ons: " + services);
+        }
     }
 }
 
-// --- 3. CORE SERVICES ---
-
-/**
- * Use Case 5: Manages the arrival order (Fairness)
- */
 class BookingRequestQueue {
     private final Queue<Reservation> queue = new LinkedList<>();
-
-    public void submitRequest(Reservation res) {
-        queue.add(res);
-        System.out.println("System: Received request from " + res.getGuestName());
-    }
-
+    public void submitRequest(Reservation res) { queue.add(res); }
     public Reservation getNextRequest() { return queue.poll(); }
     public boolean hasPendingRequests() { return !queue.isEmpty(); }
 }
 
-/**
- * Use Case 6: Handles uniqueness and inventory deduction
- */
 class BookingService {
     private final InventoryManager inventory;
     private final BookingRequestQueue intakeQueue;
-
-    // Set ensures no Room ID is ever double-booked
     private final Map<RoomType, Set<String>> allocatedRoomIds = new HashMap<>();
 
     public BookingService(InventoryManager inventory, BookingRequestQueue intakeQueue) {
         this.inventory = inventory;
         this.intakeQueue = intakeQueue;
-        for (RoomType type : RoomType.values()) {
-            allocatedRoomIds.put(type, new HashSet<>());
-        }
+        for (RoomType type : RoomType.values()) allocatedRoomIds.put(type, new HashSet<>());
     }
 
-    public void processBookings() {
-        System.out.println("\n--- Processing Booking Allocations ---");
+    public void processBookings(AddOnManager addOnManager, List<AddOnService> globalOptions) {
+        System.out.println("\n--- Processing Allocations & Add-ons ---");
         while (intakeQueue.hasPendingRequests()) {
             Reservation request = intakeQueue.getNextRequest();
-            RoomType type = request.getRequestedType();
-            int currentQty = inventory.getAvailableCount(type);
+            int currentQty = inventory.getAvailableCount(request.getRequestedType());
 
             if (currentQty > 0) {
-                // Generate a unique ID (e.g., SUITE-1)
-                String newRoomId = type.name() + "-" + (allocatedRoomIds.get(type).size() + 1);
+                String roomId = request.getRequestedType().name() + "-" + (allocatedRoomIds.get(request.getRequestedType()).size() + 1);
+                allocatedRoomIds.get(request.getRequestedType()).add(roomId);
+                inventory.updateInventory(request.getRequestedType(), currentQty - 1);
 
-                // Add to Set (Uniqueness Enforcement)
-                allocatedRoomIds.get(type).add(newRoomId);
+                System.out.println("CONFIRMED: " + request.getGuestName() + " in " + roomId);
 
-                // Immediate Inventory Synchronization
-                inventory.updateInventory(type, currentQty - 1);
+                // UC7: Randomly assign an add-on for demonstration
+                if (!globalOptions.isEmpty()) {
+                    addOnManager.addServiceToReservation(request.getRequestId(), globalOptions.get(0));
+                }
 
-                System.out.println("SUCCESS: " + request.getGuestName() + " assigned Room " + newRoomId);
+                double extra = addOnManager.calculateTotalAddOnCost(request.getRequestId());
+                System.out.println("Extra Service Total: $" + extra);
             } else {
-                System.out.println("FAILED: No availability for " + request.getGuestName() + " (" + type + ")");
+                System.out.println("REJECTED: No availability for " + request.getGuestName());
             }
         }
-        System.out.println("--- End of Processing ---\n");
     }
 }
 
-// --- 4. MAIN APPLICATION ---
+// --- 3. MAIN APPLICATION ---
 
 public class BookMyStayApp {
     public static void main(String[] args) {
-        // Initialization
+        // Setup
         InventoryManager inventory = new InventoryManager();
-        inventory.updateInventory(RoomType.SUITE, 1);  // Limited supply
         inventory.updateInventory(RoomType.SINGLE, 5);
 
+        AddOnManager addOnManager = new AddOnManager();
         BookingRequestQueue intakeQueue = new BookingRequestQueue();
         BookingService bookingService = new BookingService(inventory, intakeQueue);
 
-        // UC5: First-Come-First-Served intake
-        System.out.println("--- Guest Intake ---");
-        intakeQueue.submitRequest(new Reservation("Alice", RoomType.SUITE));
-        intakeQueue.submitRequest(new Reservation("Bob", RoomType.SUITE)); // Will be rejected (FIFO)
-        intakeQueue.submitRequest(new Reservation("Charlie", RoomType.SINGLE));
+        // Define Add-on Options
+        AddOnService breakfast = new AddOnService("Buffet Breakfast", 25.0);
+        AddOnService spa = new AddOnService("Spa Treatment", 120.0);
 
-        // UC6: Process Queue
-        bookingService.processBookings();
+        // UC5: Intake
+        intakeQueue.submitRequest(new Reservation("Alice", RoomType.SINGLE));
+        intakeQueue.submitRequest(new Reservation("Bob", RoomType.SINGLE));
 
-        // Check Final State
-        System.out.println("Final Suite Count: " + inventory.getAvailableCount(RoomType.SUITE));
+        // UC6 & UC7: Process Allocation and apply Add-ons
+        bookingService.processBookings(addOnManager, List.of(breakfast, spa));
+
+        System.out.println("\nSystem operation complete. All services mapped correctly.");
     }
 }
